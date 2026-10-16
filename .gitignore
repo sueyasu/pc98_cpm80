@@ -1,4 +1,5 @@
 /build/
+/external/
 *.d88
 *.hfe
 *.img
