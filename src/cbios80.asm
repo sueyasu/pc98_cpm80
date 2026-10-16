@@ -135,7 +135,7 @@ BOOT_HANG:      HLT
 GOCPM_COMMON:
                 MVI     A,0C3H
                 STA     0000H
-                LXI     H,WBOOT
+                LXI     H,BIOSBASE+3
                 SHLD    0001H
 
                 MVI     A,0C3H
