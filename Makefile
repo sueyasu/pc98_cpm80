@@ -2,13 +2,8 @@ BUILD_DIR := build
 
 ASM8080 ?= asm8080
 NASM ?= nasm
-MKFS_CPM ?= mkfs.cpm
-CPMCP ?= cpmcp
 PYTHON ?= python3
 HXCFE ?= hxcfe
-
-DISKDEFS := $(CURDIR)/cpmtools/diskdefs
-CPM_ENV := CPMTOOLSFMT="$(DISKDEFS)"
 
 FDIPL := $(BUILD_DIR)/fdipl80.bin
 GATEWAY := $(BUILD_DIR)/gateway86.bin
@@ -37,7 +32,7 @@ hfe: $(HFE_2DD) $(HFE_2HD)
 
 check-tools:
 	@set -e; \
-	for t in $(ASM8080) $(NASM) $(MKFS_CPM) $(CPMCP) $(PYTHON); do \
+	for t in $(ASM8080) $(NASM) $(PYTHON); do \
 		command -v $$t >/dev/null 2>&1 || { echo "missing required tool: $$t" >&2; exit 1; }; \
 	done
 
@@ -76,25 +71,13 @@ $(SYSTEM): $(FDIPL) $(GATEWAY) $(CPM22) $(CBIOS)
 	cat $^ > $@
 	@test "$$(stat -c%s $@)" -eq 15872 || { echo "$@: expected 15872 bytes" >&2; exit 1; }
 
-define copy_external_commands
-	@if [ -n "$(EXTERNAL_COMMANDS)" ]; then \
-		set -e; \
-		for f in $(EXTERNAL_COMMANDS); do \
-			echo "cpmcp: $$f -> $(1)"; \
-			$(CPM_ENV) $(CPMCP) -f $(2) $(1) "$$f" 0:; \
-		done; \
-	fi
-endef
+$(IMG_2DD): $(SYSTEM) $(EXTERNAL_COMMANDS) scripts/mkcpmimage.py | $(BUILD_DIR)
+	$(PYTHON) scripts/mkcpmimage.py --format 2dd --system $(SYSTEM) \
+		$(foreach f,$(EXTERNAL_COMMANDS),--file $(f)) $@
 
-$(IMG_2DD): $(SYSTEM) $(EXTERNAL_COMMANDS) cpmtools/diskdefs | $(BUILD_DIR)
-	rm -f $@
-	$(CPM_ENV) $(MKFS_CPM) -f cpm80-pc98-2dd -b $(SYSTEM) $@
-	$(call copy_external_commands,$@,cpm80-pc98-2dd)
-
-$(IMG_2HD): $(SYSTEM) $(EXTERNAL_COMMANDS) cpmtools/diskdefs | $(BUILD_DIR)
-	rm -f $@
-	$(CPM_ENV) $(MKFS_CPM) -f cpm80-pc98-2hd -b $(SYSTEM) $@
-	$(call copy_external_commands,$@,cpm80-pc98-2hd)
+$(IMG_2HD): $(SYSTEM) $(EXTERNAL_COMMANDS) scripts/mkcpmimage.py | $(BUILD_DIR)
+	$(PYTHON) scripts/mkcpmimage.py --format 2hd --system $(SYSTEM) \
+		$(foreach f,$(EXTERNAL_COMMANDS),--file $(f)) $@
 
 $(D88_2DD): $(IMG_2DD) scripts/raw2d88.py | $(BUILD_DIR)
 	$(PYTHON) scripts/raw2d88.py --format 2dd --name "PC98 CPM80 2DD" $< $@
