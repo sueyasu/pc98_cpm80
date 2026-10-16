@@ -9,10 +9,9 @@ The normal `make` target requires:
 - `make`
 - `nasm`
 - `asm8080`
-- `cpmtools` (`mkfs.cpm` and `cpmcp`)
 - Python 3
 
-The repository-local `cpmtools/diskdefs` file is selected automatically; it does not need to be installed into `/etc/cpmtools`.
+`cpmtools` is not required for the normal build. The repository keeps `cpmtools/diskdefs` as a reference for manual use, but Debian/Ubuntu cpmtools reads disk format definitions from its system diskdefs file and `CPMTOOLSFMT` selects a default format name rather than a diskdefs pathname.
 
 Run:
 
@@ -33,6 +32,8 @@ The RAW images use the native PC-98 geometry used by this port:
 
 - 2DD: 80 cylinders, 2 heads, 8 x 512-byte sectors per side (640 KiB)
 - 2HD: 80 cylinders, 2 heads, 15 x 512-byte sectors per side (1200 KiB)
+
+`scripts/mkcpmimage.py` creates the CP/M 2.2 filesystem directly, writes `build/system.bin` into the system tracks, and adds optional external commands. This avoids requiring a machine-wide modification of `/etc/cpmtools/diskdefs`.
 
 The D88 files are generated from the RAW images by `scripts/raw2d88.py` and therefore do not require a separate D88 conversion utility.
 
