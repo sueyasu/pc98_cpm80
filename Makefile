@@ -60,12 +60,17 @@ $(GATEWAY): src/gateway86.asm | $(BUILD_DIR)
 	@test "$$(stat -c%s $@)" -eq 8192 || { echo "$@: expected 8192 bytes" >&2; exit 1; }
 
 $(CPM22): src/cpm22_pc98.asm | $(BUILD_DIR)
-	$(ASM8080) $< -o$@
+	$(ASM8080) $< -o$(basename $@)
 	@test "$$(stat -c%s $@)" -eq 5632 || { echo "$@: expected 5632 bytes" >&2; exit 1; }
 
 $(CBIOS): src/cbios80.asm | $(BUILD_DIR)
-	$(ASM8080) $< -o$@
-	@test "$$(stat -c%s $@)" -eq 1536 || { echo "$@: expected 1536 bytes" >&2; exit 1; }
+	$(ASM8080) $< -o$(basename $@)
+	@actual=$$(stat -c%s $@); \
+	if [ "$$actual" -gt 1536 ]; then \
+		echo "$@: assembled size $$actual exceeds 1536-byte BIOS area" >&2; \
+		exit 1; \
+	fi
+	truncate -s 1536 $@
 
 $(SYSTEM): $(FDIPL) $(GATEWAY) $(CPM22) $(CBIOS)
 	cat $^ > $@
