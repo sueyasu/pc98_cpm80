@@ -36,6 +36,21 @@ def cpm_name(path: Path):
     return stem.ljust(8).encode("ascii"), ext.ljust(3).encode("ascii")
 
 
+def write_entry(directory, dir_index, name, ext, logical_extent, rc, blocks):
+    entry = bytearray(DIR_ENTRY_SIZE)
+    entry[0] = 0
+    entry[1:9] = name
+    entry[9:12] = ext
+    entry[12] = logical_extent & 0x1F
+    entry[13] = 0
+    entry[14] = (logical_extent >> 5) & 0x3F
+    entry[15] = rc
+    for i, block in enumerate(blocks):
+        struct.pack_into("<H", entry, 16 + i * 2, block)
+    off = dir_index * DIR_ENTRY_SIZE
+    directory[off:off + DIR_ENTRY_SIZE] = entry
+
+
 def add_file(image, cfg, directory, dir_index, next_block, path):
     data = path.read_bytes()
     name, ext = cpm_name(path)
@@ -43,21 +58,25 @@ def add_file(image, cfg, directory, dir_index, next_block, path):
     exm = cfg["exm"]
     boot_bytes = cfg["boot_tracks"] * cfg["sectors"] * cfg["sector_size"]
     total_blocks = (len(image) - boot_bytes) // block_size
+
+    if dir_index >= cfg["max_dir"]:
+        raise ValueError(f"{path}: CP/M directory is full")
+    if not data:
+        write_entry(directory, dir_index, name, ext, 0, 0, [])
+        return dir_index + 1, next_block
+
     records_left = math.ceil(len(data) / RECORD_SIZE)
     source_pos = 0
     extent_base = 0
-
-    if records_left == 0:
-        records_left = 1
 
     while records_left:
         if dir_index >= cfg["max_dir"]:
             raise ValueError(f"{path}: CP/M directory is full")
 
         extent_records = min(records_left, 128 * (exm + 1))
-        bytes_left = max(0, len(data) - source_pos)
+        bytes_left = len(data) - source_pos
         extent_bytes = min(bytes_left, extent_records * RECORD_SIZE)
-        blocks_needed = math.ceil(extent_bytes / block_size) if extent_bytes else 0
+        blocks_needed = math.ceil(extent_bytes / block_size)
         if blocks_needed > 8:
             raise AssertionError("extent needs more than eight allocation pointers")
         if next_block + blocks_needed > total_blocks:
@@ -72,29 +91,14 @@ def add_file(image, cfg, directory, dir_index, next_block, path):
 
         logical_extent = extent_base + ((extent_records - 1) // 128)
         rc = extent_records - ((extent_records - 1) // 128) * 128
-        entry = bytearray(DIR_ENTRY_SIZE)
-        entry[0] = 0
-        entry[1:9] = name
-        entry[9:12] = ext
-        entry[12] = logical_extent & 0x1F
-        entry[13] = 0
-        entry[14] = (logical_extent >> 5) & 0x3F
-        entry[15] = rc
-        for i, block in enumerate(blocks):
-            struct.pack_into("<H", entry, 16 + i * 2, block)
-
-        off = dir_index * DIR_ENTRY_SIZE
-        directory[off:off + DIR_ENTRY_SIZE] = entry
+        write_entry(directory, dir_index, name, ext, logical_extent, rc, blocks)
         dir_index += 1
         next_block += blocks_needed
         records_left -= extent_records
         extent_base += exm + 1
 
     # CP/M file sizes are record-granular. Pad only the last partial record.
-    if data and len(data) % RECORD_SIZE:
-        last_record_end = source_pos - (source_pos % block_size) + (len(data) % block_size)
-        if len(data) % block_size == 0:
-            last_record_end = source_pos
+    if len(data) % RECORD_SIZE:
         block_base = boot_bytes + (next_block - 1) * block_size
         used = len(data) % block_size
         if used == 0:
