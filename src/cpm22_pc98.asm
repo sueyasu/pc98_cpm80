@@ -1839,94 +1839,73 @@ IORET   ORA     A
 ;   Routine to select the track and sector that the desired
 ; block number falls in.
 ;
-TRKSEC  LHLD    FILEPOS         ;get position of last accessed file
-        MVI     C,2     ;in directory and compute sector #.
-        CALL    SHIFTR  ;sector #=file-position/4.
-        SHLD    BLKNMBR         ;save this as the block number of interest.
-        SHLD    CKSUMTBL;what's it doing here too?
+TRKSEC  LHLD    FILEPOS         ;directory record = entry / 4
+        MVI     C,2
+        CALL    SHIFTR
+        SHLD    BLKNMBR
+        SHLD    CKSUMTBL
+        XRA     A
+        STA     LOGHIGH         ;directory records are always below 8 MiB
 ;
-;   if the sector number has already been set (BLKNMBR), enter
-; at this point.
-;
-TRKSEC1         LXI     H,BLKNMBR
-        MOV     C,M     ;move sector number into (BC).
-        INX     H
-        MOV     B,M
-        LHLD    SCRATCH3;get current sector number and
-        MOV     E,M     ;move this into (DE).
-        INX     H
-        MOV     D,M
-        LHLD    SCRATCH2;get current track number.
-        MOV     A,M     ;and this into (HL).
-        INX     H
-        MOV     H,M
-        MOV     L,A
-TRKSEC2         MOV     A,C     ;is desired sector before current one?
-        SUB     E
-        MOV     A,B
-        SBB     D
-        JNC     TRKSEC3
-        PUSH    H       ;yes, decrement sectors by one track.
-        LHLD    SECTORS         ;get sectors per track.
-        MOV     A,E
-        SUB     L
-        MOV     E,A
-        MOV     A,D
-        SBB     H
-        MOV     D,A     ;now we have backed up one full track.
-        POP     H
-        DCX     H       ;adjust track counter.
-        JMP     TRKSEC2
-TRKSEC3         PUSH    H       ;desired sector is after current one.
-        LHLD    SECTORS         ;get sectors per track.
-        DAD     D       ;bump sector pointer to next track.
-        JC      TRKSEC4
-        MOV     A,C     ;is desired sector now before current one?
-        SUB     L
-        MOV     A,B
-        SBB     H
-        JC      TRKSEC4
-        XCHG            ;not yes, increment track counter
-        POP     H       ;and continue until it is.
-        INX     H
-        JMP     TRKSEC3
-;
-;   here we have determined the track number that contains the
-; desired sector.
-;
-TRKSEC4         POP     H       ;get track number (HL).
-        PUSH    B
-        PUSH    D
-        PUSH    H
-        XCHG
-        LHLD    OFFSET  ;adjust for first track offset.
-        DAD     D
+; Divide the 24-bit disk-relative 128-byte record address
+; LOGHIGH:BLKNMBR by the 16-bit DPB SPT value. The original
+; running 16-bit sector/track cache wrapped at the 8 MiB boundary.
+; The quotient (BIOS track) fits 16 bits for supported HDD partitions.
+; The remainder is a full 16-bit sector number: PC-98 HDD SPT may
+; exceed 255, unlike the FM-11 disk formats.
+TRKSEC1 LHLD    BLKNMBR
         MOV     B,H
-        MOV     C,L
-        CALL    SETTRK  ;select this track.
-        POP     D       ;reset current track pointer.
-        LHLD    SCRATCH2
-        MOV     M,E
-        INX     H
-        MOV     M,D
-        POP     D
-        LHLD    SCRATCH3;reset the first sector on this track.
-        MOV     M,E
-        INX     H
-        MOV     M,D
-        POP     B
-        MOV     A,C     ;now subtract the desired one.
-        SUB     E       ;to make it relative (1-# sectors/track).
+        MOV     C,L             ;BC = low 16 dividend bits / quotient
+        LDA     LOGHIGH
+        MOV     L,A
+        MVI     H,0             ;HL = initial remainder (high dividend byte)
+        LHLD    SECTORS
+        XCHG                    ;DE = 16-bit sectors per BIOS track
+        MVI     A,16
+        STA     DIVCOUNT
+TRKDIV  MOV     A,C
+        ADD     A
         MOV     C,A
         MOV     A,B
+        RAL
+        MOV     B,A             ;shift next dividend bit into carry
+        MOV     A,L
+        RAL
+        MOV     L,A
+        MOV     A,H
+        RAL
+        MOV     H,A             ;HL = (remainder << 1) + next bit
+        MOV     A,H
+        CMP     D
+        JC      TRKBIT
+        JNZ     TRKSUB
+        MOV     A,L
+        CMP     E
+        JC      TRKBIT
+TRKSUB  MOV     A,L
+        SUB     E
+        MOV     L,A
+        MOV     A,H
         SBB     D
-        MOV     B,A
-        LHLD    XLATE   ;translate this sector according to this table.
+        MOV     H,A
+        INR     C               ;append quotient bit 1
+TRKBIT  LDA     DIVCOUNT
+        DCR     A
+        STA     DIVCOUNT
+        JNZ     TRKDIV
+        PUSH    H               ;remainder = physical record within track
+        LHLD    OFFSET
+        DAD     B               ;offset in BIOS tracks (OFF)
+        MOV     B,H
+        MOV     C,L
+        CALL    SETTRK
+        POP     B
+        LHLD    XLATE
         XCHG
-        CALL    SECTRN  ;let the bios translate it.
+        CALL    SECTRN
         MOV     C,L
         MOV     B,H
-        JMP     SETSEC  ;and select it.
+        JMP     SETSEC
 ;
 ;   Compute block number from record number (SAVNREC) and
 ; extent number (SAVEXT).
@@ -1995,19 +1974,25 @@ CHKBLK  LHLD    BLKNMBR
 ; resulting sector number is stored back in (BLKNMBR). This
 ; will still have to be adjusted for the track number.
 ;
-LOGICAL         LDA     BLKSHFT         ;get log2(physical/logical sectors).
-        LHLD    BLKNMBR         ;get physical sector desired.
-LOGICL1         DAD     H       ;compute logical sector number.
-        DCR     A       ;note logical sectors are 128 bytes long.
-        JNZ     LOGICL1
-        SHLD    LOGSECT         ;save logical sector.
-        LDA     BLKMASK         ;get block mask.
+LOGICAL         LDA     BLKSHFT
+        MOV     B,A             ;number of shifts (records per block)
+        MVI     C,0             ;upper 8 bits of 24-bit sector address
+        LHLD    BLKNMBR
+LOGICL1 DAD     H               ;shift low 16 bits, carry from bit 15
+        MOV     A,C
+        RAL                     ;shift carry into the upper byte
         MOV     C,A
-        LDA     SAVNREC         ;get next sector to access.
-        ANA     C       ;extract the relative position within physical block.
-        ORA     L       ;and add it too logical sector.
+        DCR     B
+        JNZ     LOGICL1
+        STA     LOGHIGH
+        SHLD    LOGSECT         ;low 16 bits of block's first record
+        LDA     BLKMASK
+        MOV     C,A
+        LDA     SAVNREC
+        ANA     C
+        ORA     L               ;block-aligned base; no carry into high byte
         MOV     L,A
-        SHLD    BLKNMBR         ;and store.
+        SHLD    BLKNMBR
         RET
 ;
 ;   Set (HL) to point to extent byte in fcb.
@@ -3736,6 +3721,8 @@ SAVEXT  DB      0       ;storage for extent number of file.
 SAVNREC         DW      0       ;storage for number of records in file.
 BLKNMBR         DW      0       ;block number (physical sector) used within a file or logical sector.
 LOGSECT         DW      0       ;starting logical (128 byte) sector of block (physical sector).
+LOGHIGH         DB      0       ;high 8 bits of 24-bit disk-relative record
+DIVCOUNT        DB      0       ;bit counter for 24/16-bit track division
 FCBPOS  DB      0       ;relative position within buffer for fcb of file of interest.
 FILEPOS         DW      0       ;files position within directory (0 to max entries -1).
 ;

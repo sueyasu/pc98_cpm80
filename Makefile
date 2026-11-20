@@ -26,7 +26,7 @@ D88_2HD := $(BUILD_DIR)/pc98_cpm80_2hd.d88
 HFE_2DD := $(BUILD_DIR)/pc98_cpm80_2dd.hfe
 HFE_2HD := $(BUILD_DIR)/pc98_cpm80_2hd.hfe
 
-.PHONY: all commands raw d88 hfe clean check-tools check-hxcfe
+.PHONY: all commands raw d88 hfe clean check-tools check-hxcfe test-bdos24
 
 all: raw d88
 
@@ -43,6 +43,10 @@ check-tools:
 	for t in $(ASM8080) $(NASM) $(PYTHON); do \
 		command -v $$t >/dev/null 2>&1 || { echo "missing required tool: $$t" >&2; exit 1; }; \
 	done
+
+
+test-bdos24:
+	$(PYTHON) tests/check_bdos24.py
 
 check-hxcfe:
 	@command -v $(HXCFE) >/dev/null 2>&1 || { \

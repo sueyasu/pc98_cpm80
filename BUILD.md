@@ -82,3 +82,24 @@ Generated floppy images are intentionally ignored by Git and should normally be 
 BDOS function 13 takes no drive parameter. It clears the login and read-only vectors, resets DMA, and logs in the logical boot drive (the PC-98 equivalent of standard CP/M's A: reset default). CCP scans, reads and deletes the batch file `$$$.SUB` on that same boot drive, then restores the user's current drive, including A:. Warm boot preserves the current user/drive byte independently of the boot drive.
 
 The original Digital Research SUBMIT.COM creates its temporary file on the current/default disk. Run that version with the boot drive as the current drive; use a drive prefix for the input .SUB file if necessary. External SUBMIT variants that hard-code A: require adjustment or replacement when booting from another drive. The system does not redirect explicit A: file accesses.
+
+## Large HDD partition addressing
+
+The BDOS stores disk-relative 128-byte record addresses as 24-bit values.
+The high byte `LOGHIGH` complements the existing 16-bit `BLKNMBR`;
+`TRKSEC1` divides that 24-bit address by the full **16-bit** SPT from
+the current DPB. PC-98 HDD SPT may exceed 255 (unlike FM-11), so the
+remainder and sector passed to the BIOS remain 16 bits. The BIOS/Gateway
+layout, 16 KiB allocation blocks and 128 MiB partition limit are unchanged.
+This prevents addresses above 8 MiB from wrapping to the start of a
+partition. The CCP/BDOS resident image is still exactly 5632 bytes.
+
+Run `make test-bdos24` for a host-side arithmetic regression. It checks
+the source and the shift/subtract division model at 8 MiB and the
+128 MiB final allocation block. It does **not** replace assembling the
+BDOS or testing a disposable HDD image on V30 hardware/emulator.
+
+A runtime check should allocate a 16 KiB file block at block number 512
+(8 MiB) and near 8191 (128 MiB), write/read distinctive data, and
+verify the physical image against low-address guard sectors. Include
+ordinary sequential access and BDOS function 40 (zero-fill) operations.
