@@ -1856,11 +1856,11 @@ TRKSEC  LHLD    FILEPOS         ;directory record = entry / 4
 TRKSEC1 LHLD    BLKNMBR
         MOV     B,H
         MOV     C,L             ;BC = low 16 dividend bits / quotient
+        LHLD    SECTORS
+        XCHG                    ;DE = 16-bit sectors per BIOS track
         LDA     LOGHIGH
         MOV     L,A
         MVI     H,0             ;HL = initial remainder (high dividend byte)
-        LHLD    SECTORS
-        XCHG                    ;DE = 16-bit sectors per BIOS track
         MVI     A,16
         STA     DIVCOUNT
 TRKDIV  MOV     A,C
