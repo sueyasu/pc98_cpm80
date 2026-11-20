@@ -101,7 +101,6 @@ BOOT:
                 DB      0EDH,0EDH,061H
                 CPI     0FFH
                 JZ      BOOT_FAIL
-                STA     WBOOT_CONTEXT
                 STA     CDISK
                 STA     BOOT_DRIVE
 
@@ -195,12 +194,9 @@ WBOOT:
                 LXI     SP,BIOS_STACK_TOP
 
                 ; Page zero 0004h is CCP's user/current-drive byte.
-                ; Preserve the full byte for CCP, and separately keep only the
-                ; low-nibble drive for the fixed-size RESBOOT ABI.
+                ; Preserve the full byte for CCP. BDOS reset uses BOOT_DRIVE.
                 LDA     CDISK
                 STA     BOOT_INFO
-                ANI     0FH
-                STA     WBOOT_CONTEXT
 
                 ; SID/DDT may overlay CCP, so warm boot must restore CCP+BDOS.
                 ; Native service also flushes the write-back cache first.
@@ -505,7 +501,7 @@ MSG_INIT_FAIL:  DB      13,10,"PC-98 disk init failed",13,10,0
 MSG_CACHE_FAIL: DB      13,10,"PC-98 disk sync failed",13,10,0
 
 BOOT_INFO:      DB      0
-WBOOT_CONTEXT:  DB      0
+                DB      0               ; reserved (former WBOOT_CONTEXT)
 CUR_DRIVE:      DB      0
 CUR_TRACK:      DW      0
 CUR_SECTOR:     DW      0
@@ -611,21 +607,16 @@ BIOS_END:
 ;
 ; RESBOOT (F7E0h):
 ;   Called by CCP instead of its normal RESDSK wrapper.
-;   Supply the physical boot drive as the otherwise-unused E parameter of
-;   BDOS function 13.  BDOS FBASE1 copies E to C before dispatch, so the
-;   size-preserving RSTDSK patch MOV A,C receives the boot drive.
+;   Invoke ordinary BDOS function 13. RSTDSK reads BOOT_DRIVE directly;
+;   the caller's E register is ignored.
 ;
 ; BOOTSEL (F7E9h):
 ;   Select the physical boot drive with ordinary BDOS function 14.
-;   Used only by CCP DELBATCH in place of its hard-coded A: selection.
+;   Used by CCP GETINP and DELBATCH for the batch-file disk.
 ; ---------------------------------------------------------------------------
 RESBOOT_PRIVATE:
-                ; Fixed ABI at F7E0h.  This routine must be exactly 9 bytes so
-                ; BOOTSEL_PRIVATE remains at F7E9h.
-                ; WBOOT_CONTEXT always contains only the low-nibble drive.
+                ; Fixed ABI at F7E0h; pad to keep BOOTSEL at F7E9h.
                 MVI     C,13
-                LDA     WBOOT_CONTEXT
-                MOV     E,A
                 JMP     BDOS
 
                 DS      05E9H-($-BIOS)

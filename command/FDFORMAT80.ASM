@@ -40,7 +40,6 @@
 BDOS            EQU     0005H
 CMDLEN          EQU     0080H
 CMDTAIL         EQU     0081H
-BOOTDRV_ABI     EQU     0F7FCH  ; cbios80.asm private boot-drive byte
 CDISK           EQU     0004H   ; CP/M page-zero current logical drive
 
 SVC_SYNC        EQU     04H
@@ -231,12 +230,7 @@ RESET_AND_EXIT:
                 ; Invalidate raw-media target cache again.
                 CALL    CACHE_RESET_ALL
 
-                ; This CP/M-80 BDOS has a private extension to function 13:
-                ; E must contain the saved boot-drive value.  Do not leave E as
-                ; scratch state from the formatter, or ACTIVE can become an
-                ; invalid drive (for example 09h -> "Bdos Err On 9: Select").
-                LDA     BOOTDRV_ABI
-                MOV     E,A
+                ; Standard parameterless disk reset; BDOS selects the boot drive.
                 MVI     C,13
                 CALL    BDOS
 

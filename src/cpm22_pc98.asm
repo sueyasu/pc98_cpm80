@@ -29,6 +29,7 @@ TBUFF   EQU     80H     ;i/o buffer and command line storage.
 TBASE   EQU     100H    ;transiant program storage area.
 RESBOOT         EQU     0F7E0H  ;CBIOS private: BDOS reset on physical boot drive
 BOOTSEL         EQU     0F7E9H  ;CBIOS private: BDOS select physical boot drive
+BOOTDRV         EQU     0F7FCH  ;CBIOS private: logical boot drive
 ;
 ;   Set control character equates.
 ;
@@ -274,13 +275,16 @@ GETINP  LDA     BATCH   ;if =0, then use console input.
         JZ      GETINP1
 ;
 ;   Use the submit file ($$$.sub) which is prepared by a
-; SUBMIT run. It must be on drive (A) and it will be deleted
-; if and error occures (like eof).
+; SUBMIT run. It must be on the boot drive and will be deleted
+; on completion or error.
 ;
-        LDA     CDRIVE  ;select drive 0 if need be.
-        ORA     A
-        MVI     A,0     ;always use drive A for submit.
-        CNZ     DSKSEL  ;select it if required.
+        CALL    BOOTSEL ;select the same disk scanned by RSTDSK
+        NOP             ;preserve original 9-byte footprint
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
         LXI     D,BATCHFCB
         CALL    OPEN    ;look for it.
         JZ      GETINP1         ;if not there, use normal input.
@@ -304,9 +308,9 @@ GETINP  LDA     BATCH   ;if =0, then use console input.
         LXI     D,BATCHFCB;close the batch file now.
         CALL    CLOSE
         JZ      GETINP1         ;quit on an error.
-        LDA     CDRIVE  ;re-select previous drive if need be.
-        ORA     A
-        CNZ     DSKSEL  ;don't do needless selects.
+        LDA     CDRIVE  ;restore current drive even when it is A:
+        CALL    DSKSEL
+        NOP             ;preserve original 7-byte footprint
 ;
 ;   Print line just read on console.
 ;
@@ -649,7 +653,7 @@ COMMAND         LXI     SP,CCPSTACK;setup stack area.
         MOV     E,A
         CALL    GETSETUC;and set it.
         CALL    RESBOOT         ;reset disk system on physical boot drive.
-        STA     BATCH   ;clear batch mode flag.
+        STA     BATCH   ;reset result: FF if a $ file was found
         POP     B
         MOV     A,C
         ANI     0FH     ;isolate the drive number.
@@ -3471,12 +3475,12 @@ GETVER  MVI     A,022h  ;version 2.2
 RSTDSK  LXI     H,0     ;clear write protect status and log
         SHLD    WRTPRT  ;in vector.
         SHLD    LOGIN
-        MOV     A,C     ;function 13 private parameter: physical boot drive
+        LDA     BOOTDRV ;function 13 ignores DE; reset to boot drive
         STA     ACTIVE
         LXI     H,TBUFF         ;setup default dma address.
         SHLD    USERDMA
         CALL    DEFDMA
-        JMP     LOGINDRV;now log in drive 'A'.
+        JMP     LOGINDRV;log in the boot drive and detect batch files.
 ;
 ;   Function to open a specified file.
 ;
@@ -3740,9 +3744,9 @@ FILEPOS         DW      0       ;files position within directory (0 to max entri
 ;
 CKSUMTBL:DB     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 ;
-;   Extra space ?
+;   Reserved space (two bytes used by the longer RSTDSK instruction).
 ;
-        DB      0,0,0,0
+        DB      0,0
 ;
 ;**************************************************************
 ;*

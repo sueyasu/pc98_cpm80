@@ -76,3 +76,9 @@ make clean        # remove build/
 ```
 
 Generated floppy images are intentionally ignored by Git and should normally be published as release artifacts rather than committed to the repository.
+
+## Boot drive and SUBMIT
+
+BDOS function 13 takes no drive parameter. It clears the login and read-only vectors, resets DMA, and logs in the logical boot drive (the PC-98 equivalent of standard CP/M's A: reset default). CCP scans, reads and deletes the batch file `$$$.SUB` on that same boot drive, then restores the user's current drive, including A:. Warm boot preserves the current user/drive byte independently of the boot drive.
+
+The original Digital Research SUBMIT.COM creates its temporary file on the current/default disk. Run that version with the boot drive as the current drive; use a drive prefix for the input .SUB file if necessary. External SUBMIT variants that hard-code A: require adjustment or replacement when booting from another drive. The system does not redirect explicit A: file accesses.
