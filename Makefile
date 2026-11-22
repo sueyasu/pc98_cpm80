@@ -71,7 +71,13 @@ $(GATEWAY): src/gateway86.asm | $(BUILD_DIR)
 
 $(CPM22): src/cpm22_pc98.asm | $(BUILD_DIR)
 	$(ASM8080) $< -o$(basename $@)
-	@test "$$(stat -c%s $@)" -eq 5632 || { echo "$@: expected 5632 bytes" >&2; exit 1; }
+	@actual=$(stat -c%s $@); \
+	if [ "$actual" -gt 5632 ]; then \
+		echo "$@: assembled size $actual exceeds 5632-byte CCP/BDOS area" >&2; \
+		exit 1; \
+	fi
+	# asm8080 may omit trailing DS padding from the binary output.
+	truncate -s 5632 $@
 
 $(CBIOS): src/cbios80.asm | $(BUILD_DIR)
 	$(ASM8080) $< -o$(basename $@)
