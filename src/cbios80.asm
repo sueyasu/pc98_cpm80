@@ -182,13 +182,59 @@ FBK_DELAY:
                 RET
 
 GOCPM_WARM:
-                ; Restore the full user/current-drive byte captured at WBOOT entry.
-                ; Do not force BOOT_DRIVE here: CCP expects C=(uuuudddd).
+                ; Validate the preserved current drive after reloading the OS.
+                ; A BDOS Select error may leave page zero pointing at an
+                ; unavailable drive; retain its user number on fallback.
+                CALL    WBOOT_CHECK_DRIVE
                 CALL    GOCPM_COMMON
                 LDA     BOOT_INFO
                 STA     CDISK
                 MOV     C,A
                 JMP     CCP
+
+; SELDSK checks media presence, but a mapped HDD partition can still be
+; unreadable. Probe the first data track (DPB OFF) using a scratch DMA,
+; without touching IPL/system tracks.  GOCPM_COMMON restores DMA=0080h.
+WBOOT_CHECK_DRIVE:
+                LDA     BOOT_INFO
+                ANI     0FH
+                MOV     C,A
+                LDA     BOOT_DRIVE
+                CMP     C
+                RZ
+                MVI     B,0
+                CALL    SELDSK
+                MOV     A,H
+                ORA     L
+                JZ      WBOOT_FALLBACK
+                LXI     D,10             ; DPH+0Ah = DPB pointer
+                DAD     D
+                MOV     E,M
+                INX     H
+                MOV     D,M
+                XCHG
+                LXI     D,13             ; DPB+0Dh = OFF
+                DAD     D
+                MOV     C,M
+                INX     H
+                MOV     B,M
+                CALL    SETTRK
+                LXI     B,0
+                CALL    SETSEC
+                LXI     B,DIRBUF
+                CALL    SETDMA
+                CALL    READ
+                ORA     A
+                RZ
+
+WBOOT_FALLBACK:
+                LDA     BOOT_INFO
+                ANI     0F0H             ; preserve user number
+                MOV     B,A
+                LDA     BOOT_DRIVE       ; actual boot drive, not always A:
+                ORA     B
+                STA     BOOT_INFO
+                RET
 
 WBOOT:
                 LXI     SP,BIOS_STACK_TOP
